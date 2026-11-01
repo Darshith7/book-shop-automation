@@ -37,9 +37,16 @@ To satisfy strict Object-Oriented criteria, `StorageService` implements the **Re
   - `Sale.fromJSON(s)` &rarr; yields `Sale` instances with `SaleItem[]` and `calculateTotal()`.
   - `Publisher.fromJSON(p)` &rarr; yields `Publisher` instances with lead-time invariants.
 
+#### Single Logical Storage Commit for Sales Transactions
+Sales processing requires updating both inventory stock levels and the historical sales ledger simultaneously. To prevent inconsistent states:
+- In [`SalesService.processSale()`](file:///Users/saidarshithanubola/Desktop/book%20shop%20automation/src/app/core/services/sales.service.ts), new state is prepared immutably (cloning the book entity and peeking the sequential receipt number) without mutating the active in-memory collections.
+- [`StorageService.commitSale()`](file:///Users/saidarshithanubola/Desktop/book%20shop%20automation/src/app/core/services/storage.service.ts) persists the updated books, prepended sale, and incremented receipt counter in a single `localStorage.setItem` call.
+- Application observables (`books$`, `sales$`) emit only **after** persistence succeeds.
+- If storage write fails (e.g. quota limits), the active state remains completely untouched, and the receipt counter is not advanced.
+
 ---
 
-### 3. Reorder Threshold Formula & Units Ambiguity Analysis
+### 3. Reorder Threshold Formula & Lead-Time Handling
 
 The case study defines the inventory threshold as follows:
 
@@ -53,13 +60,16 @@ $$\text{threshold} = \text{copiesSoldInLast14Days} \times \text{procurementLeadD
 - **Reorder Condition**: Flagged when $\text{currentStock} < \text{threshold}$.
 - **Quantity to Procure**: Calculated as $\max(0, \text{threshold} - \text{currentStock})$.
 
-#### Analysis of the Dimensional Units Ambiguity
-From an industrial operations research perspective, standard inventory control (e.g., Economic Order Quantity or Safety Stock) typically models lead-time demand as:
-$$\text{Demand during Lead Time} = \left(\frac{\text{Sales in 14 days}}{14 \text{ days}}\right) \times \text{Lead Days}$$
-However, the original Case Study 11 text explicitly states *"the number of copies of the book sold over a period of two weeks multiplied by the available number of days it takes to procure"*.
-- Replacing this formula with a daily average would deviate from the exact case study problem statement given to students.
-- Therefore, the literal assignment formula was preserved as the default calculation engine in [`Inventory.calculateThreshold()`](file:///Users/saidarshithanubola/Desktop/book%20shop%20automation/src/app/core/models/inventory.model.ts) and [`ReorderReportGenerator`](file:///Users/saidarshithanubola/Desktop/book%20shop%20automation/src/app/core/models/report.model.ts).
-- Seed data has been tuned so that titles with rapid recent sales and longer lead times cleanly trigger the threshold (e.g., *Clean Code* and *Introduction to Algorithms*), ensuring a successful live viva demonstration.
+#### Rolling 14-Day Calculation
+To avoid calendar-day edge cases where resetting to midnight includes nearly 15 days, BAS uses an exact **rolling 14-day window** ($14 \times 86,400,000 \text{ ms} = 1,209,600,000 \text{ ms}$):
+- Cutoff time: $\text{referenceDate} - 1,209,600,000\text{ ms}$.
+- Includes sales where $\text{cutoffTime} \le \text{saleTime} \le \text{referenceTime}$.
+- Strictly excludes sales prior to cutoff or after the reference timestamp.
+
+#### Publisher Lead-Time Integrity (No Silent Substitutions)
+- In [`Inventory.evaluateReorder()`](file:///Users/saidarshithanubola/Desktop/book%20shop%20automation/src/app/core/models/inventory.model.ts), the system strictly avoids inventing or defaulting missing publisher lead times (e.g. no arbitrary 7-day fallback).
+- If a book references an unregistered publisher or a publisher with non-positive lead time, it is flagged with `hasValidPublisher: false`, setting `threshold: null`.
+- Such titles are isolated in the reorder report's `incompleteItems` queue with an action alert, preventing unvetted recommendations from polluting procurement orders.
 
 ---
 
@@ -87,4 +97,3 @@ The system models three distinct user perspectives within a single unified Angul
    Every [`SaleItem`](file:///Users/saidarshithanubola/Desktop/book%20shop%20automation/src/app/core/models/sale.model.ts) stores the `unitPrice` and `publisherName` at the exact time the sale occurred. If the manager subsequently changes the catalogue price of that book, past sales receipts and historical reports remain unchanged.
 4. **Idempotent Enquiry Counting**:
    Merely visiting a book's detail page or refreshing the browser does **not** increment its enquiry count. The enquiry counter is incremented **only** when a customer clicks the explicit "Check Availability / Enquire" button on an in-stock title.
-

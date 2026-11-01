@@ -158,10 +158,49 @@ export class StorageService {
     return this._currentRole$.value;
   }
 
+  peekNextReceiptNumber(): string {
+    return `RCP-${this._receiptCounter + 1}`;
+  }
+
   getNextReceiptNumber(): string {
     this._receiptCounter += 1;
     this.persist();
     return `RCP-${this._receiptCounter}`;
+  }
+
+  /**
+   * Commits a book sale and stock reduction as a single atomic LocalStorage write operation.
+   * State and Observables are updated ONLY if localStorage.setItem succeeds.
+   * If persistence fails, state is not altered and the receipt counter is preserved.
+   */
+  commitSale(updatedBooks: Book[], newSale: Sale): void {
+    const nextCounter = this._receiptCounter + 1;
+    const currentSales = this._sales$.value;
+    const updatedSales = [newSale, ...currentSales];
+
+    const snapshot: IBasStorageSnapshot = {
+      version: CURRENT_VERSION,
+      books: updatedBooks.map(b => b.toJSON()),
+      publishers: this._publishers$.value.map(p => p.toJSON()),
+      sales: updatedSales.map(s => s.toJSON()),
+      requests: this._requests$.value.map(r => r.toJSON()),
+      enquiries: this._enquiries$.value.map(e => e.toJSON()),
+      currentRole: this._currentRole$.value,
+      receiptCounter: nextCounter
+    };
+
+    // Logical single storage write
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    } catch (err) {
+      console.error('BAS: Failed to persist sale to LocalStorage:', err);
+      throw new Error('Storage failure: Unable to record sale to local storage. State remains unchanged.');
+    }
+
+    // Only upon successful persistence: mutate in-memory state and emit to observables
+    this._receiptCounter = nextCounter;
+    this._books$.next([...updatedBooks]);
+    this._sales$.next(updatedSales);
   }
 
   // --- Mutators ---

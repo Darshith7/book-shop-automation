@@ -37,8 +37,9 @@ export class SalesService {
 
   /**
    * Processes a retail book sale entered by the Sales Clerk.
-   * Atomic operation: validates ISBN, positive integer quantity, and available stock.
-   * If any validation fails, neither stock nor sales history changes.
+   * Atomically validates ISBN, quantity, and stock, prepares new state immutably,
+   * and persists books and sales in a single logical LocalStorage operation.
+   * If persistence fails, previous state remains completely untouched.
    */
   processSale(
     isbn: string,
@@ -50,46 +51,51 @@ export class SalesService {
       throw new Error('Please enter a valid ISBN number.');
     }
 
-    // 2. Lookup book
+    // 2. Lookup book in current catalogue
     const cleanIsbn = isbn.trim().toUpperCase();
-    const books = this.storageService.getBooks();
-    const book = books.find(b => b.isbn.toUpperCase() === cleanIsbn);
+    const currentBooks = this.storageService.getBooks();
+    const existingBook = currentBooks.find(b => b.isbn.toUpperCase() === cleanIsbn);
 
-    if (!book) {
+    if (!existingBook) {
       throw new Error(`Book with ISBN "${isbn}" not found in catalogue.`);
     }
 
-    // 3. Validate Quantity
+    // 3. Validate Quantity is a positive whole integer
     if (isNaN(quantity) || !Number.isInteger(quantity) || quantity <= 0) {
       throw new Error(`Sale quantity must be a positive integer greater than zero (received: ${quantity}).`);
     }
 
     // 4. Validate Sufficient Stock
-    if (book.stockQuantity < quantity) {
+    if (existingBook.stockQuantity < quantity) {
       throw new Error(
-        `Insufficient stock for "${book.title}". Available copies: ${book.stockQuantity}, Requested: ${quantity}.`
+        `Insufficient stock for "${existingBook.title}". Available copies: ${existingBook.stockQuantity}, Requested: ${quantity}.`
       );
     }
 
     // 5. Lookup Publisher for historical record
-    const publisher = this.publisherService.getPublisherById(book.publisherId);
+    const publisher = this.publisherService.getPublisherById(existingBook.publisherId);
     const publisherName = publisher ? publisher.name : 'Independent Publisher';
 
-    // 6. Deduct Stock on Book entity (encapsulated)
-    book.sellCopies(quantity);
+    // 6. Prepare updated book and inventory without prematurely mutating active state
+    const updatedBook = Book.fromJSON(existingBook.toJSON());
+    updatedBook.sellCopies(quantity);
+
+    const updatedBooks = currentBooks.map(b =>
+      b.isbn.toUpperCase() === cleanIsbn ? updatedBook : b
+    );
 
     // 7. Create SaleItem with current selling price preserved
     const saleItem = new SaleItem(
-      book.isbn,
-      book.title,
+      updatedBook.isbn,
+      updatedBook.title,
       publisherName,
       quantity,
-      book.price
+      updatedBook.price
     );
 
-    // 8. Generate unique Sale ID and sequential Receipt Number
+    // 8. Peek next sequential receipt number without prematurely advancing the counter
+    const receiptNumber = this.storageService.peekNextReceiptNumber();
     const saleId = `SALE-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const receiptNumber = this.storageService.getNextReceiptNumber();
 
     // 9. Instantiate Sale domain entity
     const sale = new Sale(
@@ -100,14 +106,11 @@ export class SalesService {
       clerkName
     );
 
-    // 10. Atomically commit changes to storage
-    const sales = this.storageService.getSales();
-    sales.unshift(sale);
+    // 10. Persist complete updated state in one logical storage operation
+    // If this throws, active books, sales, and receipt counter remain unchanged
+    this.storageService.commitSale(updatedBooks, sale);
 
-    this.storageService.saveBooks(books);
-    this.storageService.saveSales(sales);
-
-    return { sale, book, item: saleItem };
+    return { sale, book: updatedBook, item: saleItem };
   }
 
   /**

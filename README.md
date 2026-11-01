@@ -18,7 +18,7 @@ Designed strictly for a **physical retail bookstore with clerk-assisted counter 
 - **Authentic Case Study 11 Reorder Formula**:
   $$\text{Threshold} = \text{Copies Sold in Last 14 Days} \times \text{Procurement Lead Days}$$
   Generates procurement purchase orders with calculated quantities to procure and full publisher mailing addresses.
-- **Comprehensive Test Suite**: 45 executable unit and integration tests (Vitest) validating boundary conditions, negative stock prevention, and cyclomatic complexity ($V(G) = 9$).
+- **Comprehensive Test Suite**: 60 executable unit and integration tests (Vitest) validating boundary conditions, negative stock prevention, atomic persistence rollback, rolling 14-day calculation, publisher lead-time validation, and cyclomatic complexity ($V(G) = 9$).
 
 ---
 

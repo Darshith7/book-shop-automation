@@ -57,7 +57,8 @@ export interface ReorderReport {
   reportType: 'REORDER_REPORT';
   title: string;
   generatedAt: Date;
-  items: IReorderEvaluation[]; // Books strictly below threshold
+  items: IReorderEvaluation[]; // Books strictly below threshold with valid publisher calculation
+  incompleteItems: IReorderEvaluation[]; // Books with missing/invalid publisher records
   allEvaluations: IReorderEvaluation[]; // Complete audit of all books
   totalBooksBelowThreshold: number;
   totalCopiesToProcure: number;
@@ -205,6 +206,7 @@ export class ReorderReportGenerator extends ReportGenerator<ReorderReport, void>
 
     const allEvaluations: IReorderEvaluation[] = [];
     const reorderItems: IReorderEvaluation[] = [];
+    const incompleteItems: IReorderEvaluation[] = [];
 
     const now = new Date();
 
@@ -213,7 +215,9 @@ export class ReorderReportGenerator extends ReportGenerator<ReorderReport, void>
       const evalResult = Inventory.evaluateReorder(book, publisher, context.sales, now);
       allEvaluations.push(evalResult);
 
-      if (evalResult.isBelowThreshold) {
+      if (!evalResult.hasValidPublisher) {
+        incompleteItems.push(evalResult);
+      } else if (evalResult.isBelowThreshold) {
         reorderItems.push(evalResult);
       }
     }
@@ -228,6 +232,7 @@ export class ReorderReportGenerator extends ReportGenerator<ReorderReport, void>
       title: this.reportTitle,
       generatedAt: now,
       items: reorderItems,
+      incompleteItems,
       allEvaluations,
       totalBooksBelowThreshold: reorderItems.length,
       totalCopiesToProcure

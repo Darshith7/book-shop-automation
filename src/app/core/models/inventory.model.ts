@@ -11,10 +11,12 @@ export interface IReorderEvaluation {
   publisherAddress: string;
   currentStock: number;
   copiesSoldInLast14Days: number;
-  procurementLeadDays: number;
-  threshold: number;
+  procurementLeadDays: number | null;
+  threshold: number | null;
   isBelowThreshold: boolean;
   quantityToProcure: number;
+  hasValidPublisher: boolean;
+  publisherIssue?: string;
 }
 
 /**
@@ -23,20 +25,32 @@ export interface IReorderEvaluation {
  */
 export class Inventory {
   /**
-   * Calculates total copies sold for a specific book within the last 14 days.
+   * Exact rolling 14 days in milliseconds: 14 * 24 * 60 * 60 * 1000 = 1,209,600,000 ms.
+   */
+  static readonly ROLLING_14_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
+  /**
+   * Calculates total copies sold for a specific book within an exact rolling 14-day window
+   * ending at the reference timestamp: [referenceDate - 14 days, referenceDate].
+   *
+   * Invariant rules:
+   * - Includes sales within the defined 14-day window.
+   * - Excludes sales strictly older than cutoff (saleTime < cutoffTime).
+   * - Excludes sales strictly after reference timestamp (saleTime > refTime).
+   * - Includes sales exactly on the cutoff (saleTime === cutoffTime).
+   * - Includes sales exactly at the reference timestamp (saleTime === refTime).
    */
   static getCopiesSoldInLast14Days(isbn: string, sales: Sale[], referenceDate: Date = new Date()): number {
-    const fourteenDaysAgo = new Date(referenceDate);
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-    // Start of the day 14 days ago
-    fourteenDaysAgo.setHours(0, 0, 0, 0);
+    const cleanIsbn = isbn.trim().toUpperCase();
+    const refTime = referenceDate.getTime();
+    const cutoffTime = refTime - Inventory.ROLLING_14_DAYS_MS;
 
     let soldCount = 0;
     for (const sale of sales) {
       const saleTime = new Date(sale.saleDate).getTime();
-      if (saleTime >= fourteenDaysAgo.getTime() && saleTime <= referenceDate.getTime()) {
+      if (saleTime >= cutoffTime && saleTime <= refTime) {
         for (const item of sale.items) {
-          if (item.isbn.toUpperCase() === isbn.toUpperCase()) {
+          if (item.isbn.trim().toUpperCase() === cleanIsbn) {
             soldCount += item.quantity;
           }
         }
@@ -54,11 +68,16 @@ export class Inventory {
    * threshold = copiesSoldInLast14Days * procurementLeadDays
    */
   static calculateThreshold(copiesSoldInLast14Days: number, procurementLeadDays: number): number {
+    if (!Number.isInteger(procurementLeadDays) || procurementLeadDays < 1) {
+      throw new Error(`Invalid procurement lead days: ${procurementLeadDays}. Must be an integer >= 1.`);
+    }
     return Math.max(0, copiesSoldInLast14Days * procurementLeadDays);
   }
 
   /**
    * Evaluates reorder status for a single book.
+   * Strictly avoids inventing or defaulting a missing publisher's lead time.
+   * Books with missing or invalid publisher data are flagged with hasValidPublisher = false.
    */
   static evaluateReorder(
     book: Book,
@@ -66,11 +85,50 @@ export class Inventory {
     sales: Sale[],
     referenceDate: Date = new Date()
   ): IReorderEvaluation {
-    const leadDays = publisher ? publisher.procurementLeadDays : 7;
-    const publisherName = publisher ? publisher.name : 'Unknown Publisher';
-    const publisherAddress = publisher ? publisher.fullAddress : 'Address not registered';
-
     const copiesSold14 = Inventory.getCopiesSoldInLast14Days(book.isbn, sales, referenceDate);
+
+    // Case A: Publisher is completely missing from registry
+    if (!publisher) {
+      return {
+        isbn: book.isbn,
+        bookTitle: book.title,
+        author: book.author,
+        publisherId: book.publisherId,
+        publisherName: 'Unregistered Publisher',
+        publisherAddress: 'Address unavailable (Publisher ID not registered in directory)',
+        currentStock: book.stockQuantity,
+        copiesSoldInLast14Days: copiesSold14,
+        procurementLeadDays: null,
+        threshold: null,
+        isBelowThreshold: false,
+        quantityToProcure: 0,
+        hasValidPublisher: false,
+        publisherIssue: `Publisher ID "${book.publisherId}" is not registered in the publisher directory.`
+      };
+    }
+
+    // Case B: Publisher exists but has non-positive or invalid lead time
+    const leadDays = publisher.procurementLeadDays;
+    if (isNaN(leadDays) || !Number.isInteger(leadDays) || leadDays < 1) {
+      return {
+        isbn: book.isbn,
+        bookTitle: book.title,
+        author: book.author,
+        publisherId: book.publisherId,
+        publisherName: publisher.name,
+        publisherAddress: publisher.fullAddress,
+        currentStock: book.stockQuantity,
+        copiesSoldInLast14Days: copiesSold14,
+        procurementLeadDays: null,
+        threshold: null,
+        isBelowThreshold: false,
+        quantityToProcure: 0,
+        hasValidPublisher: false,
+        publisherIssue: `Publisher "${publisher.name}" has invalid procurement lead days: ${leadDays}. Must be >= 1.`
+      };
+    }
+
+    // Case C: Valid publisher and lead time -> execute authentic Case Study 11 calculation
     const threshold = Inventory.calculateThreshold(copiesSold14, leadDays);
     const isBelowThreshold = book.stockQuantity < threshold;
     const quantityToProcure = isBelowThreshold ? Math.max(0, threshold - book.stockQuantity) : 0;
@@ -80,15 +138,15 @@ export class Inventory {
       bookTitle: book.title,
       author: book.author,
       publisherId: book.publisherId,
-      publisherName,
-      publisherAddress,
+      publisherName: publisher.name,
+      publisherAddress: publisher.fullAddress,
       currentStock: book.stockQuantity,
       copiesSoldInLast14Days: copiesSold14,
       procurementLeadDays: leadDays,
       threshold,
       isBelowThreshold,
-      quantityToProcure
+      quantityToProcure,
+      hasValidPublisher: true
     };
   }
 }
-

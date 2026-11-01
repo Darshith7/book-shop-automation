@@ -138,6 +138,25 @@ import { ReorderReport } from '../../../core/models/report.model';
           </div>
         </div>
 
+        @if (report.incompleteItems.length > 0) {
+          <!-- Notice for Books with Incomplete Publisher Records -->
+          <div class="p-4 m-4 mb-2 bg-amber-50 border-l-4 border-amber-500 text-xs text-amber-900 rounded-r-lg">
+            <div class="font-bold text-sm mb-1">
+              ⚠️ Incomplete Publisher Data Detected ({{ report.incompleteItems.length }} title(s))
+            </div>
+            <p class="mb-2">
+              The following books cannot have their reorder thresholds accurately evaluated because publisher lead time is missing or unassigned. Update publisher records in the Publisher Directory:
+            </p>
+            <ul class="list-disc list-inside space-y-1">
+              @for (inc of report.incompleteItems; track inc.isbn) {
+                <li>
+                  <strong>{{ inc.bookTitle }}</strong> (ISBN: {{ inc.isbn }}) — {{ inc.publisherIssue }}
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
         @if (activeTab === 'reorder') {
           <!-- Filtered: Only Books Below Threshold Requiring Orders -->
           <div class="table-responsive">
@@ -171,10 +190,10 @@ import { ReorderReport } from '../../../core/models/report.model';
                       {{ item.copiesSoldInLast14Days }}
                     </td>
                     <td class="text-center text-xs font-semibold">
-                      {{ item.procurementLeadDays }}d
+                      {{ item.procurementLeadDays !== null ? item.procurementLeadDays + 'd' : 'N/A' }}
                     </td>
                     <td class="text-center font-bold text-xs text-amber-900 bg-amber-50">
-                      {{ item.threshold }}
+                      {{ item.threshold !== null ? item.threshold : 'N/A' }}
                     </td>
                     <td class="text-center font-bold text-sm text-red-800 bg-red-100">
                       {{ item.quantityToProcure }}
@@ -231,20 +250,22 @@ import { ReorderReport } from '../../../core/models/report.model';
               </thead>
               <tbody>
                 @for (item of report.allEvaluations; track item.isbn) {
-                  <tr [ngClass]="item.isBelowThreshold ? 'bg-red-50/40' : ''">
+                  <tr [ngClass]="item.isBelowThreshold ? 'bg-red-50/40' : (!item.hasValidPublisher ? 'bg-amber-50/30' : '')">
                     <td class="font-mono text-neutral-900 font-bold">{{ item.isbn }}</td>
                     <td class="font-semibold text-neutral-900">{{ item.bookTitle }}</td>
-                    <td class="text-center font-bold" [ngClass]="item.currentStock < item.threshold ? 'text-red-700' : 'text-emerald-700'">
+                    <td class="text-center font-bold" [ngClass]="item.threshold !== null && item.currentStock < item.threshold ? 'text-red-700' : 'text-emerald-700'">
                       {{ item.currentStock }}
                     </td>
                     <td class="text-center">{{ item.copiesSoldInLast14Days }}</td>
-                    <td class="text-center">{{ item.procurementLeadDays }}d</td>
-                    <td class="text-center font-bold">{{ item.threshold }}</td>
+                    <td class="text-center">{{ item.procurementLeadDays !== null ? item.procurementLeadDays + 'd' : 'N/A' }}</td>
+                    <td class="text-center font-bold">{{ item.threshold !== null ? item.threshold : 'N/A' }}</td>
                     <td class="text-center font-bold" [ngClass]="item.quantityToProcure > 0 ? 'text-red-700' : 'text-neutral-400'">
                       {{ item.quantityToProcure > 0 ? item.quantityToProcure : '-' }}
                     </td>
                     <td class="text-center">
-                      @if (item.isBelowThreshold) {
+                      @if (!item.hasValidPublisher) {
+                        <span class="badge badge-warning text-[9px]">INCOMPLETE PUB DATA</span>
+                      } @else if (item.isBelowThreshold) {
                         <span class="badge badge-danger text-[9px]">BELOW THRESHOLD</span>
                       } @else {
                         <span class="badge badge-success text-[9px]">ADEQUATE</span>

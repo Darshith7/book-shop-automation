@@ -33,9 +33,9 @@ import { InrCurrencyPipe } from '../../../shared/pipes/inr-currency.pipe';
                 <div class="book-cover-author text-sm">By {{ book.author }}</div>
               </div>
 
-              <div class="mt-4 p-3 bg-neutral-50 rounded-lg text-xs text-neutral-600 border border-neutral-200">
-                <p><strong>Physical Copy:</strong> Hardcover / Paperback</p>
-                <p class="mt-1"><strong>Location:</strong> Section {{ book.category.charAt(0) }}, Shelf 4</p>
+              <div class="mt-4 p-3 bg-neutral-50 rounded-lg text-xs text-neutral-600 border border-neutral-200 space-y-1">
+                <p><strong>Category:</strong> {{ book.category }}</p>
+                <p><strong>Stock Status:</strong> {{ book.isInStock() ? 'Available for In-Store Counter Purchase' : 'Currently Out of Stock' }}</p>
               </div>
             </div>
 

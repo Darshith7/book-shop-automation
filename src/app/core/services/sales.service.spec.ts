@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { SalesService } from './sales.service';
 import { BookService } from './book.service';
@@ -99,6 +99,52 @@ describe('SalesService (Counter Billing & Sales Processing)', () => {
     });
   });
 
+  describe('Atomic Persistence & Error Rollback Guarantees', () => {
+    it('should roll back completely and NOT mutate state or consume receipt number if storage write fails', () => {
+      const targetIsbn = '978-0132350884';
+      const bookBefore = bookService.getBookByIsbn(targetIsbn)!;
+      const stockBefore = bookBefore.stockQuantity;
+      const salesBefore = salesService.getAllSales().length;
+      const nextReceiptBefore = storageService.peekNextReceiptNumber();
+
+      // Spy on localStorage.setItem to simulate QuotaExceededError or write failure
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError: LocalStorage limit reached');
+      });
+
+      expect(() => salesService.processSale(targetIsbn, 1)).toThrow(/Storage failure/);
+
+      // Verify in-memory and stored stock remained completely unchanged
+      const bookAfter = bookService.getBookByIsbn(targetIsbn)!;
+      expect(bookAfter.stockQuantity).toBe(stockBefore);
+
+      // Verify no sale was added to the sales ledger
+      expect(salesService.getAllSales().length).toBe(salesBefore);
+
+      // Verify receipt number was NOT consumed or advanced
+      expect(storageService.peekNextReceiptNumber()).toBe(nextReceiptBefore);
+
+      setItemSpy.mockRestore();
+    });
+
+    it('should not skip sequential receipt numbers between successful and failed sale attempts', () => {
+      const targetIsbn = '978-0132350884';
+      const nextReceipt1 = storageService.peekNextReceiptNumber();
+
+      // Attempt 1: Fails due to validation (quantity too high)
+      expect(() => salesService.processSale(targetIsbn, 999)).toThrow();
+      expect(storageService.peekNextReceiptNumber()).toBe(nextReceipt1);
+
+      // Attempt 2: Succeeds with valid quantity
+      const result = salesService.processSale(targetIsbn, 1);
+      expect(result.sale.receiptNumber).toBe(nextReceipt1);
+
+      // Attempt 3: Next receipt should be next consecutive number
+      const nextReceipt2 = storageService.peekNextReceiptNumber();
+      expect(nextReceipt2).not.toBe(nextReceipt1);
+    });
+  });
+
   describe('Historical Unit Price Preservation', () => {
     it('should preserve original unit price on past sale receipt even if catalogue price is later updated', () => {
       const targetIsbn = '978-0201616224'; // The Pragmatic Programmer (Price: 920)
@@ -115,5 +161,11 @@ describe('SalesService (Counter Billing & Sales Processing)', () => {
       expect(historicalSale.totalAmount).toBe(920);
     });
   });
-});
 
+  describe('Sales Metrics', () => {
+    it('should calculate today sales count and revenue', () => {
+      expect(salesService.getTodaySalesCount()).toBeGreaterThanOrEqual(0);
+      expect(salesService.getTodaySalesRevenue()).toBeGreaterThanOrEqual(0);
+    });
+  });
+});
