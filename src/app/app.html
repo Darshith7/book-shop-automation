@@ -1,0 +1,59 @@
+<!-- Header / Navigation Bar -->
+<app-navbar></app-navbar>
+
+<!-- Main Page Router Outlet -->
+<main class="container flex-1">
+  <router-outlet></router-outlet>
+</main>
+
+<!-- Professional Bookstore Footer (Hidden during printing) -->
+<footer class="bg-[#1f2421] text-neutral-300 mt-16 pt-10 pb-6 border-t border-neutral-700 no-print text-xs">
+  <div class="container">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-8 pb-8 border-b border-neutral-800">
+      <!-- Store Identity -->
+      <div class="md:col-span-2">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-8 h-8 rounded bg-emerald-700 text-white flex items-center justify-center font-bold">
+            📖
+          </div>
+          <span class="font-serif text-lg font-bold text-white tracking-wide">
+            The Heritage Bookshop
+          </span>
+        </div>
+        <p class="text-neutral-400 text-xs leading-relaxed max-w-md mb-3">
+          Dedicated independent retail bookstore specializing in academic textbooks, engineering, computer science, and classic literature. Automating counter sales, demand estimation, and inventory reordering.
+        </p>
+        <p class="text-neutral-500 text-[11px]">
+          📍 42 Academic Avenue, Connaught Circle, New Delhi - 110001 | 📞 +91 11 2345 6789
+        </p>
+      </div>
+
+      <!-- Store Hours -->
+      <div>
+        <h4 class="font-serif font-bold text-white text-sm mb-3">Store Operating Hours</h4>
+        <ul class="space-y-1 text-neutral-400 text-xs">
+          <li><strong>Mon – Fri:</strong> 9:30 AM – 8:30 PM</li>
+          <li><strong>Saturday:</strong> 9:30 AM – 9:00 PM</li>
+          <li><strong>Sunday:</strong> 10:00 AM – 6:00 PM</li>
+          <li class="pt-2 text-emerald-400 text-[11px]">Physical sales clerk assistance available at all times</li>
+        </ul>
+      </div>
+
+      <!-- Academic Context -->
+      <div>
+        <h4 class="font-serif font-bold text-white text-sm mb-3">Academic Project Context</h4>
+        <div class="p-3 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-neutral-400 leading-snug">
+          <p class="text-white font-semibold mb-1">Software Analysis & Design (SAD)</p>
+          <p><strong>Case Study 11:</strong> Book-Shop Automation Software (BAS)</p>
+          <p class="mt-1 text-neutral-500">Pure Frontend TypeScript OOP Architecture • LocalStorage Data Store</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Copyright & Disclaimer -->
+    <div class="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-neutral-500 gap-2">
+      <p>© {{ currentYear }} The Heritage Bookshop. Built for College SAD Mini-Project Demonstration & Viva.</p>
+      <p>Demonstration Frontend Application • No external database server required.</p>
+    </div>
+  </div>
+</footer>
